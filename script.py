@@ -59,7 +59,7 @@ with col3:
 deal_dict = {"當天": d0, "48小時": d12, "7天內": d37}
 
 # --- 第二區：補位與回流 ---
-st.header("📊 2. 補位獎金 & 回流")
+st.header("📊 2. 補位獎金")
 classes = st.number_input("補開課 / 次數", min_value=0, step=1)
 
 st.subheader("💎 加發回流購課獎金 (STP-T)")
