@@ -83,9 +83,9 @@ loyalty_dict = {"10堂": l10, "20堂": l20, "30堂": l30, "40堂": l40}
 
 # --- 第三區：結構升級 ---
 st.header("📈3.結構升級獎/當月轉換")
-u1 = st.number_input("1對2變1>3+多/次數", min_value=0, step=1)
-u2 = st.number_input("團課>期班/次數", min_value=0, step=1)
-u3 = st.number_input("包班成立/次數", min_value=0, step=1)
+u1 = st.number_input("1對2 > 1對3+多 / 次數", min_value=0, step=1)
+u2 = st.number_input("團課 > 期班 / 次數", min_value=0, step=1)
+u3 = st.number_input("包班成立 / 次數", min_value=0, step=1)
 
 upgrades = {"1對2變1對3": u1, "團課變期班": u2, "包班成立": u3}
 
