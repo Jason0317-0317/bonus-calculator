@@ -3,11 +3,10 @@ import streamlit as st
 # ========================
 # 🧮 計算函式
 # ========================
-def calculate_bonus(deal_counts, extra_classes, loyalty_sessions, upgrade_counts, monthly_deals):
+def calculate_bonus(deal_counts, extra_classes, loyalty_counts, upgrade_counts, monthly_deals):
     total = 0
 
-    # 1. 體驗成交 (改為筆數累計)
-    # deal_counts 格式範例: {"當天": 2, "1-2天": 1, "3-7天": 0}
+    # 1. 體驗成交 (按筆數累計)
     total += deal_counts.get("當天", 0) * 80
     total += deal_counts.get("1-2天", 0) * 60
     total += deal_counts.get("3-7天", 0) * 50
@@ -15,17 +14,14 @@ def calculate_bonus(deal_counts, extra_classes, loyalty_sessions, upgrade_counts
     # 2. 補位獎金
     total += extra_classes * 30
 
-    # 3. 回流購物金 (維持階梯式獎勵)
-    if loyalty_sessions >= 40:
-        total += 500
-    elif loyalty_sessions >= 30:
-        total += 300
-    elif loyalty_sessions >= 20:
-        total += 200
-    elif loyalty_sessions >= 10:
-        total += 100
+    # 3. 回流獎勵 (改為按「達標人數/筆數」累計)
+    # 邏輯：只要該購買方案達標，每筆都給獎
+    total += loyalty_counts.get("10堂", 0) * 100
+    total += loyalty_counts.get("20堂", 0) * 200
+    total += loyalty_counts.get("30堂", 0) * 300
+    total += loyalty_counts.get("40堂", 0) * 500
 
-    # 4. 結構升級獎
+    # 4. 結構升級獎 (按次數累計)
     upgrade_prices = {
         "1對2變1對3": 100,
         "團課變期班": 150,
@@ -34,7 +30,7 @@ def calculate_bonus(deal_counts, extra_classes, loyalty_sessions, upgrade_counts
     for name, count in upgrade_counts.items():
         total += upgrade_prices.get(name, 0) * count
 
-    # 5. 月轉換獎
+    # 5. 月轉換獎 (維持全月達成門檻)
     if monthly_deals >= 50:
         total += 5000
     elif monthly_deals > 30:
@@ -61,13 +57,22 @@ with col3:
 
 deal_dict = {"當天": d0, "1-2天": d12, "3-7天": d37}
 
-# --- 第二區：基本活動 ---
+# --- 第二區：補位與回流 ---
 st.header("📊 2. 基礎與回流")
-c1, c2 = st.columns(2)
-with c1:
-    classes = st.number_input("補位次數", min_value=0, step=1)
-with c2:
-    loyalty = st.number_input("購買堂數 (回流獎勵用)", min_value=0, step=1)
+classes = st.number_input("補位次數", min_value=0, step=1)
+
+st.subheader("💎 回流達標人數")
+la, lb, lc, ld = st.columns(4)
+with la:
+    l10 = st.number_input("10堂 (人)", min_value=0, step=1)
+with lb:
+    l20 = st.number_input("20堂 (人)", min_value=0, step=1)
+with lc:
+    l30 = st.number_input("30堂 (人)", min_value=0, step=1)
+with ld:
+    l40 = st.number_input("40堂 (人)", min_value=0, step=1)
+
+loyalty_dict = {"10堂": l10, "20堂": l20, "30堂": l30, "40堂": l40}
 
 # --- 第三區：結構升級 ---
 st.header("📈 3. 結構升級獎")
@@ -84,12 +89,15 @@ monthly = st.number_input("本月總轉換筆數", min_value=0, step=1)
 # --- 計算按鈕 ---
 st.divider()
 if st.button("🔥 開始計算總獎金"):
-    result = calculate_bonus(deal_dict, classes, loyalty, upgrades, monthly)
+    result = calculate_bonus(deal_dict, classes, loyalty_dict, upgrades, monthly)
     
-    st.balloons() # 撒花效果
+    st.balloons() 
     st.success(f"計算完成！")
     
-    # 使用容器美化顯示
     with st.container():
         st.markdown(f"### 💵 本月總獎金預估： **{result}** 元")
-        st.info(f"明細摘要：體驗成交共 {sum(deal_dict.values())} 筆 / 升級共 {sum(upgrades.values())} 次")
+        
+        # 顯示更詳細的加總資訊
+        total_deals = sum(deal_dict.values())
+        total_loyalty = sum(loyalty_dict.values())
+        st.info(f"明細：成交 {total_deals} 筆 / 回流 {total_loyalty} 人 / 升級 {sum(upgrades.values())} 次")
