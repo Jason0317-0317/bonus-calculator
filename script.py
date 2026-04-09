@@ -52,7 +52,7 @@ def calculate_bonus(deal_counts, extra_classes, loyalty_counts, upgrade_counts):
 st.title("💰業務獎金計算系統")
 
 # --- 第一區：體驗成交 ---
-st.header("✨ 1. 體驗成交/筆")
+st.header("✨1.體驗成交/筆")
 col1, col2, col3 = st.columns(3)
 with col1:
     d0 = st.number_input("當天成交(筆)", min_value=0, step=1)
@@ -82,7 +82,7 @@ with ld:
 loyalty_dict = {"10堂": l10, "20堂": l20, "30堂": l30, "40堂": l40}
 
 # --- 第三區：結構升級 ---
-st.header("📈 3. 結構升級獎/當月轉換")
+st.header("📈3.結構升級獎/當月轉換")
 u1 = st.number_input("1對2變1>>>3+多 次數", min_value=0, step=1)
 u2 = st.number_input("團課>>>期班 次數", min_value=0, step=1)
 u3 = st.number_input("包班成立 次數", min_value=0, step=1)
@@ -100,7 +100,7 @@ if st.button("🔥開始計算總獎金"):
     
     # 數據看板
     m1, m2, m3 = st.columns(3)
-    m1.metric("總轉換筆數 (含補位)", f"{total_deals} 筆")
+    m1.metric("總轉換筆數", f"{total_deals} 筆")
     m2.metric("回流獎金小計", f"${l_subtotal}")
     m3.metric("本月預計總獎金", f"${result}")
 
