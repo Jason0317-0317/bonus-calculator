@@ -4,30 +4,25 @@ import streamlit as st
 # 🧮 計算函式
 # ========================
 def calculate_bonus(deal_counts, extra_classes, loyalty_counts, upgrade_counts):
-    total = 0
-
-    # 1. 體驗成交獎金
+    # 1. 體驗成交獎金計算
     d_total = (deal_counts.get("當天", 0) * 80 + 
-               deal_counts.get("1-2天", 0) * 60 + 
-               deal_counts.get("3-7天", 0) * 50)
-    total += d_total
+               deal_counts.get("48小時", 0) * 60 + 
+               deal_counts.get("7天內", 0) * 50)
 
     # 2. 補位獎金
-    total += extra_classes * 30
+    c_total = extra_classes * 30
 
     # 3. 回流獎勵獎金 (STP-T)
     l_total = (loyalty_counts.get("10堂", 0) * 100 + 
                loyalty_counts.get("20堂", 0) * 200 + 
                loyalty_counts.get("30堂", 0) * 300 + 
                loyalty_counts.get("40堂", 0) * 500)
-    total += l_total
 
     # 4. 結構升級獎金
     upgrade_prices = {"1對2變1對3": 100, "團課變期班": 150, "包班成立": 300}
     u_total = sum(upgrade_prices.get(name, 0) * count for name, count in upgrade_counts.items())
-    total += u_total
 
-    # 5. 月轉換獎高手(體驗 + 升級 + 回流 + 補位 = 總轉換筆數)
+    # 5. 月轉換高手筆數累計
     total_deals = (sum(deal_counts.values()) + 
                    sum(upgrade_counts.values()) + 
                    sum(loyalty_counts.values()) + 
@@ -39,9 +34,10 @@ def calculate_bonus(deal_counts, extra_classes, loyalty_counts, upgrade_counts):
     elif total_deals > 30:
         monthly_bonus = 2000
     
-    total += monthly_bonus
+    # 總計
+    final_total = d_total + c_total + l_total + u_total + monthly_bonus
 
-    return total, total_deals, monthly_bonus, l_total
+    return final_total, total_deals, monthly_bonus, l_total, d_total, u_total
 
 
 # ========================
@@ -60,7 +56,7 @@ with col2:
 with col3:
     d37 = st.number_input("7天內(筆)", min_value=0, step=1)
 
-deal_dict = {"當天": d0, "1-2天": d12, "3-7天": d37}
+deal_dict = {"當天": d0, "48小時": d12, "7天內": d37}
 
 # --- 第二區：補位與回流 ---
 st.header("📊 2. 補位獎金 & 回流")
@@ -90,28 +86,39 @@ upgrades = {"1對2變1對3": u1, "團課變期班": u2, "包班成立": u3}
 # --- 計算按鈕 ---
 st.divider()
 if st.button("🔥 開始計算總獎金"):
-    # 執行計算
-    result, total_deals, m_bonus, l_subtotal = calculate_bonus(deal_dict, classes, loyalty_dict, upgrades)
+    # 執行計算並獲取各項獎金明細
+    result, total_v, m_bonus, l_bonus, d_bonus, u_bonus = calculate_bonus(deal_dict, classes, loyalty_dict, upgrades)
     
     st.balloons()
     st.success("計算完成！")
     
-    # 數據看板 (移除中間的回流獎金小計，改為並列顯示總筆數與總金額)
+    # 數據看板
     m1, m2 = st.columns(2)
-    m1.metric("📊 總轉換筆數", f"{total_deals} 筆")
+    m1.metric("📊 總轉換筆數", f"{total_v} 筆")
     m2.metric("💵 本月預計總獎金", f"${result}")
 
     with st.expander("📝 查看詳細拆解"):
-        st.write(f"• **體驗成交**：{sum(deal_dict.values())} 筆")
-        st.write(f"• **補開課程**：{classes} 筆")
-        st.write(f"• **回流人數**：{sum(loyalty_dict.values())} 筆")
-        st.write(f"• **結構升級**：{sum(upgrades.values())} 筆")
-        st.write("---")
-        st.write(f"• **回流獎金小計**：{l_subtotal} 元")
-        st.write(f"• **補位獎金小計**：{classes * 30} 元")
-        st.write(f"• **高手加碼獎金**：{m_bonus} 元")
+        # 項目筆數統計
+        st.markdown("### 📋 項目統計")
+        st.write(f"• 體驗成交：{sum(deal_dict.values())} 筆")
+        st.write(f"• 補開課程：{classes} 筆")
+        st.write(f"• 回流人數：{sum(loyalty_dict.values())} 人")
+        st.write(f"• 結構升級：{sum(upgrades.values())} 次")
         
-        if total_deals > 30:
-            st.info(f"✅ 總筆數 {total_deals} 達標！額外獲得高手獎金：{m_bonus} 元")
+        st.divider()
+        
+        # 獎金金額明細
+        st.markdown("### 💸 獎金明細")
+        st.write(f"• **體驗成交獎金**：{d_bonus} 元")
+        st.write(f"• **補位獎金**：{classes * 30} 元")
+        st.write(f"• **加發回流獎金**：{l_bonus} 元")
+        st.write(f"• **結構升級獎金**：{u_bonus} 元")
+        st.write(f"• **月轉換高手獎勵**：{m_bonus} 元")
+        
+        st.divider()
+        
+        # 達成提示
+        if total_v > 30:
+            st.info(f"✅ 總筆數 {total_v} 達標！已包含高手獎勵 ${m_bonus}")
         else:
-            st.warning(f"💡 目前總筆數 {total_deals}，還差 {31 - total_deals} 筆即可領取 $2,000 獎金！")
+            st.warning(f"💡 目前總筆數 {total_v}，還差 {31 - total_v} 筆即可領取 $2,000 高手獎金！")
