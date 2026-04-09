@@ -66,9 +66,9 @@ deal_dict = {"當天": d0, "1-2天": d12, "3-7天": d37}
 # --- 第二區：補位與回流 ---
 st.header("📊2.補位獎金")
 # 補位獎金現在也會影響總轉換筆數
-classes = st.number_input("補開課次數", min_value=0, step=1)
+classes = st.number_input("補開課 / 次數", min_value=0, step=1)
 
-st.subheader("💎加發回流購課獎金(STP-T)")
+st.subheader("💎加發回流購課獎金 (STP-T)")
 la, lb, lc, ld = st.columns(4)
 with la:
     l10 = st.number_input("10堂 (人)", min_value=0, step=1)
