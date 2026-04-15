@@ -1,7 +1,6 @@
 import streamlit as st
-import smtplib
-from email.mime.text import MIMEText
-from email.header import Header
+import pandas as pd
+import io
 
 # ========================
 # 計算函式
@@ -42,30 +41,38 @@ def calculate_bonus(deal_counts, extra_classes, loyalty_counts, upgrade_counts):
     return final_total, total_deals, monthly_bonus, l_total, d_total, u_total
 
 # ========================
-# 寄送信件函式 (徹底解決 ASCII 編碼問題)
+# 產生 Excel 檔案的函式
 # ========================
-def send_email(receiver_email, content):
-    # 【請務必填寫這裡的資訊】
-    sender_user = "你的Gmail帳號@gmail.com" 
-    sender_password = "你的16位應用程式密碼" 
+def generate_excel(total_v, result, deal_dict, classes, loyalty_dict, upgrades, d_bonus, l_bonus, u_bonus, m_bonus):
+    # 整理資料成表格格式
+    data = {
+        "報表項目": [
+            "【總結】",
+            "總轉換筆數 (筆)", "本月預計總獎金 (元)",
+            "【項目統計】",
+            "體驗成交 (筆)", "補開課程 (次)", "回流人數 (人)", "結構升級 (次)",
+            "【獎金明細】",
+            "體驗成交獎金 (元)", "補位獎金 (元)", "加發回流獎金 (元)", "結構升級獎金 (元)", "月轉換高手獎勵 (元)"
+        ],
+        "數據": [
+            "", # 標題列留空
+            total_v, result,
+            "", 
+            sum(deal_dict.values()), classes, sum(loyalty_dict.values()), sum(upgrades.values()),
+            "", 
+            d_bonus, classes * 30, l_bonus, u_bonus, m_bonus
+        ]
+    }
     
-    # 強制指定純文字格式與 utf-8 編碼
-    msg = MIMEText(content, 'plain', 'utf-8')
-    msg['From'] = sender_user
-    msg['To'] = receiver_email
+    df = pd.DataFrame(data)
     
-    # 將標題進行嚴格的 Base64/UTF-8 編碼封裝，避免 smtplib 轉字串時報錯
-    msg['Subject'] = Header("業務獎金結算報表", 'utf-8').encode()
-
-    try:
-        server = smtplib.SMTP_SSL("smtp.gmail.com", 465)
-        server.login(sender_user, sender_password)
-        # 傳送郵件
-        server.sendmail(sender_user, receiver_email, msg.as_string())
-        server.quit()
-        return True, "發送成功"
-    except Exception as e:
-        return False, str(e)
+    # 將 DataFrame 轉換為 Excel 的二進位資料供下載
+    output = io.BytesIO()
+    # 使用 openpyxl 作為引擎寫入
+    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+        df.to_excel(writer, index=False, sheet_name='當月獎金結算')
+    
+    return output.getvalue()
 
 # ========================
 # Streamlit UI
@@ -73,9 +80,11 @@ def send_email(receiver_email, content):
 st.set_page_config(page_title="業務獎金計算系統", layout="centered")
 st.title("業務獎金計算系統")
 
-# 初始化 Session State (確保輸入 Email 時報表不會消失)
+# 初始化 Session State，確保點擊下載時畫面資料不會消失
 if 'report_text' not in st.session_state:
     st.session_state.report_text = ""
+if 'excel_data' not in st.session_state:
+    st.session_state.excel_data = None
 if 'total_v' not in st.session_state:
     st.session_state.total_v = 0
 if 'm_bonus' not in st.session_state:
@@ -123,12 +132,14 @@ st.divider()
 if st.button("開始計算總獎金", type="primary"):
     st.balloons()
     
+    # 執行計算
     result, total_v, m_bonus, l_bonus, d_bonus, u_bonus = calculate_bonus(deal_dict, classes, loyalty_dict, upgrades)
     
     # 存入 Session State 以保留狀態
     st.session_state.total_v = total_v
     st.session_state.m_bonus = m_bonus
     
+    # 產生並儲存純文字報表
     st.session_state.report_text = f"""業務獎金結算報表
 ----------------------
 總轉換筆數：{total_v} 筆
@@ -148,9 +159,15 @@ if st.button("開始計算總獎金", type="primary"):
 - 月轉換高手獎勵：{m_bonus} 元
 """
 
-# --- 報表顯示與寄信區塊 ---
-# 只要有計算過，就會顯示報表與寄信表單
-if st.session_state.report_text != "":
+    # 產生並儲存 Excel 二進位資料
+    st.session_state.excel_data = generate_excel(
+        total_v, result, deal_dict, classes, loyalty_dict, 
+        upgrades, d_bonus, l_bonus, u_bonus, m_bonus
+    )
+
+# --- 報表顯示與下載區塊 ---
+# 只要有計算過(excel_data有資料)，就會顯示報表與下載按鈕
+if st.session_state.excel_data is not None:
     st.success("計算完成")
     
     with st.expander("查看詳細報表", expanded=True):
@@ -162,20 +179,13 @@ if st.session_state.report_text != "":
             st.warning(f"目前總筆數 {st.session_state.total_v}。距離領取 2000 元高手獎金還差 {30 - st.session_state.total_v} 筆")
 
     st.divider()
-    st.header("寄送電子郵件報表")
+    st.header("匯出報表")
     
-    # 使用 form 包裝寄信功能，避免輸入信箱時不斷重新整理畫面
-    with st.form("email_form"):
-        target_email = st.text_input("輸入接收者的 Gmail 信箱")
-        submit_email = st.form_submit_button("發送郵件")
-        
-        if submit_email:
-            if target_email:
-                with st.spinner("正在寄送，請稍候..."):
-                    success, msg = send_email(target_email, st.session_state.report_text)
-                    if success:
-                        st.success(f"報表已成功寄送至 {target_email}")
-                    else:
-                        st.error(f"寄送失敗：{msg}")
-            else:
-                st.error("請提供有效的 Email 地址")
+    # Streamlit 內建的下載按鈕
+    st.download_button(
+        label="下載 Excel 結算檔案",
+        data=st.session_state.excel_data,
+        file_name="業務當月獎金結算表.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        type="primary"
+    )
