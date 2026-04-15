@@ -7,7 +7,7 @@ from email.header import Header
 # 計算函式
 # ========================
 def calculate_bonus(deal_counts, extra_classes, loyalty_counts, upgrade_counts):
-    # 1. 體驗成交獎金計算
+    # 1. 體驗成交獎金
     d_total = (deal_counts.get("當天", 0) * 80 + 
                deal_counts.get("48小時", 0) * 60 + 
                deal_counts.get("7天內", 0) * 50)
@@ -32,7 +32,6 @@ def calculate_bonus(deal_counts, extra_classes, loyalty_counts, upgrade_counts):
                    extra_classes)
     
     monthly_bonus = 0
-    # 門檻邏輯：大於等於 50 領 5000，大於等於 30 領 2000
     if total_deals >= 50:
         monthly_bonus = 5000
     elif total_deals >= 30:
@@ -43,42 +42,44 @@ def calculate_bonus(deal_counts, extra_classes, loyalty_counts, upgrade_counts):
     return final_total, total_deals, monthly_bonus, l_total, d_total, u_total
 
 # ========================
-# 寄送 Gmail 函式 (修正編碼問題)
+# 寄送信件函式 (徹底解決 ASCII 編碼問題)
 # ========================
 def send_email(receiver_email, content):
-    # 重要設定：請在此處填入您的資訊
-    sender_user = "您的Gmail帳號@gmail.com" 
-    sender_password = "您的16位應用程式密碼" 
+    # 【請務必填寫這裡的資訊】
+    sender_user = "你的Gmail帳號@gmail.com" 
+    sender_password = "你的16位應用程式密碼" 
     
-    # 建立郵件物件，明確指定 utf-8
+    # 強制指定純文字格式與 utf-8 編碼
     msg = MIMEText(content, 'plain', 'utf-8')
     msg['From'] = sender_user
     msg['To'] = receiver_email
-    # 對郵件標題進行編碼，避免 ASCII 錯誤
+    
+    # 將標題進行嚴格的 Base64/UTF-8 編碼封裝，避免 smtplib 轉字串時報錯
     msg['Subject'] = Header("業務獎金結算報表", 'utf-8').encode()
 
     try:
-        # 使用 Gmail SMTP SSL 連線
         server = smtplib.SMTP_SSL("smtp.gmail.com", 465)
         server.login(sender_user, sender_password)
-        # 傳送編碼後的郵件內容
+        # 傳送郵件
         server.sendmail(sender_user, receiver_email, msg.as_string())
         server.quit()
-        return True
+        return True, "發送成功"
     except Exception as e:
-        st.error(f"寄送失敗：{str(e)}")
-        return False
+        return False, str(e)
 
 # ========================
 # Streamlit UI
 # ========================
-
 st.set_page_config(page_title="業務獎金計算系統", layout="centered")
 st.title("業務獎金計算系統")
 
-# 初始化 session_state 用於儲存報表內容
+# 初始化 Session State (確保輸入 Email 時報表不會消失)
 if 'report_text' not in st.session_state:
     st.session_state.report_text = ""
+if 'total_v' not in st.session_state:
+    st.session_state.total_v = 0
+if 'm_bonus' not in st.session_state:
+    st.session_state.m_bonus = 0
 
 # --- 第一區：體驗成交 ---
 st.header("1. 體驗成交/筆")
@@ -120,20 +121,14 @@ upgrades = {"1對2變1對3": u1, "團課變期班": u2, "包班成立": u3}
 # --- 計算按鈕 ---
 st.divider()
 if st.button("開始計算總獎金", type="primary"):
-    # 觸發氣球動畫
     st.balloons()
     
-    # 執行計算
     result, total_v, m_bonus, l_bonus, d_bonus, u_bonus = calculate_bonus(deal_dict, classes, loyalty_dict, upgrades)
     
-    st.success("計算完成")
+    # 存入 Session State 以保留狀態
+    st.session_state.total_v = total_v
+    st.session_state.m_bonus = m_bonus
     
-    # 數據看板
-    m1, m2 = st.columns(2)
-    m1.metric("總轉換筆數", f"{total_v} 筆")
-    m2.metric("本月預計總獎金", f"NT$ {result}")
-
-    # 生成詳細報表文字內容
     st.session_state.report_text = f"""業務獎金結算報表
 ----------------------
 總轉換筆數：{total_v} 筆
@@ -153,26 +148,34 @@ if st.button("開始計算總獎金", type="primary"):
 - 月轉換高手獎勵：{m_bonus} 元
 """
 
+# --- 報表顯示與寄信區塊 ---
+# 只要有計算過，就會顯示報表與寄信表單
+if st.session_state.report_text != "":
+    st.success("計算完成")
+    
     with st.expander("查看詳細報表", expanded=True):
         st.text(st.session_state.report_text)
         
-        # 達成提示 (無表情符號版)
-        if total_v >= 30:
-            st.info(f"總筆數 {total_v} 已達標。包含高手獎勵 {m_bonus} 元")
+        if st.session_state.total_v >= 30:
+            st.info(f"總筆數 {st.session_state.total_v} 已達標。包含高手獎勵 {st.session_state.m_bonus} 元")
         else:
-            st.warning(f"目前總筆數 {total_v}。距離領取 2000 元高手獎金還差 {30 - total_v} 筆")
+            st.warning(f"目前總筆數 {st.session_state.total_v}。距離領取 2000 元高手獎金還差 {30 - st.session_state.total_v} 筆")
 
-# --- 寄送郵件區塊 ---
-if st.session_state.report_text != "":
     st.divider()
     st.header("寄送電子郵件報表")
-    target_email = st.text_input("輸入接收者的 Gmail 信箱")
     
-    if st.button("發送郵件"):
-        if target_email:
-            with st.spinner("正在處理中，請稍候..."):
-                success = send_email(target_email, st.session_state.report_text)
-                if success:
-                    st.success(f"報表已寄送至 {target_email}")
-        else:
-            st.error("請提供有效的 Email 地址")
+    # 使用 form 包裝寄信功能，避免輸入信箱時不斷重新整理畫面
+    with st.form("email_form"):
+        target_email = st.text_input("輸入接收者的 Gmail 信箱")
+        submit_email = st.form_submit_button("發送郵件")
+        
+        if submit_email:
+            if target_email:
+                with st.spinner("正在寄送，請稍候..."):
+                    success, msg = send_email(target_email, st.session_state.report_text)
+                    if success:
+                        st.success(f"報表已成功寄送至 {target_email}")
+                    else:
+                        st.error(f"寄送失敗：{msg}")
+            else:
+                st.error("請提供有效的 Email 地址")
