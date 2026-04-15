@@ -1,4 +1,7 @@
 import streamlit as st
+import smtplib
+from email.mime.text import MIMEText
+from email.header import Header
 
 # ========================
 # 計算函式
@@ -31,14 +34,36 @@ def calculate_bonus(deal_counts, extra_classes, loyalty_counts, upgrade_counts):
     monthly_bonus = 0
     if total_deals >= 50:
         monthly_bonus = 5000
-    elif total_deals > 30:
+    elif total_deals >= 30:
         monthly_bonus = 2000
     
-    # 總計
     final_total = d_total + c_total + l_total + u_total + monthly_bonus
 
     return final_total, total_deals, monthly_bonus, l_total, d_total, u_total
 
+# ========================
+# 寄信函式
+# ========================
+def send_email(receiver_email, content):
+    # 這邊設定您的 Gmail 帳號資訊
+    # 注意：需使用 Google 的 "應用程式密碼"
+    sender_user = "您的Gmail帳號@gmail.com" 
+    sender_password = "您的應用程式密碼" 
+    
+    msg = MIMEText(content, 'plain', 'utf-8')
+    msg['From'] = sender_user
+    msg['To'] = receiver_email
+    msg['Subject'] = Header("業務獎金結算報表", 'utf-8')
+
+    try:
+        server = smtplib.SMTP_SSL("smtp.gmail.com", 465)
+        server.login(sender_user, sender_password)
+        server.sendmail(sender_user, receiver_email, msg.as_string())
+        server.quit()
+        return True
+    except Exception as e:
+        st.error(f"寄送失敗：{e}")
+        return False
 
 # ========================
 # Streamlit UI
@@ -83,9 +108,16 @@ u3 = st.number_input("包班成立 / 次數", min_value=0, step=1)
 
 upgrades = {"1對2變1對3": u1, "團課變期班": u2, "包班成立": u3}
 
+# 暫存計算結果供寄信使用
+if 'report_text' not in st.session_state:
+    st.session_state.report_text = ""
+
 # --- 計算按鈕 ---
 st.divider()
-if st.button("開始計算總獎金"):
+if st.button("開始計算總獎金", type="primary"):
+    # 執行氣球動畫
+    st.balloons()
+    
     # 執行計算
     result, total_v, m_bonus, l_bonus, d_bonus, u_bonus = calculate_bonus(deal_dict, classes, loyalty_dict, upgrades)
     
@@ -96,29 +128,46 @@ if st.button("開始計算總獎金"):
     m1.metric("總轉換筆數", f"{total_v} 筆")
     m2.metric("本月預計總獎金", f"NT$ {result}")
 
-    # 整合後的詳細拆解框
+    # 詳細報表內容 (準備給 Email 使用)
+    st.session_state.report_text = f"""
+業務獎金結算報表
+----------------------
+總轉換筆數：{total_v} 筆
+本月總獎金：NT$ {result}
+
+項目統計：
+- 體驗成交：{sum(deal_dict.values())} 筆
+- 補開課程：{classes} 筆
+- 回流人數：{sum(loyalty_dict.values())} 人
+- 結構升級：{sum(upgrades.values())} 次
+
+獎金明細：
+- 體驗成交獎金：{d_bonus} 元
+- 補位獎金：{classes * 30} 元
+- 加發回流獎金：{l_bonus} 元
+- 結構升級獎金：{u_bonus} 元
+- 月轉換高手獎勵：{m_bonus} 元
+    """
+
     with st.expander("查看詳細報表", expanded=True):
-        col_left, col_right = st.columns(2)
+        st.text(st.session_state.report_text)
         
-        with col_left:
-            st.markdown("### 項目統計")
-            st.write(f"體驗成交：{sum(deal_dict.values())} 筆")
-            st.write(f"補開課程：{classes} 筆")
-            st.write(f"回流人數：{sum(loyalty_dict.values())} 人")
-            st.write(f"結構升級：{sum(upgrades.values())} 次")
-        
-        with col_right:
-            st.markdown("### 獎金明細")
-            st.write(f"體驗成交獎金：{d_bonus} 元")
-            st.write(f"補位獎金：{classes * 30} 元")
-            st.write(f"加發回流獎金：{l_bonus} 元")
-            st.write(f"結構升級獎金：{u_bonus} 元")
-            st.write(f"月轉換高手獎勵：{m_bonus} 元")
-        
-        st.divider()
-        
-        # 達成提示
-        if total_v > 30:
+        if total_v >= 30:
             st.info(f"總筆數 {total_v} 達標。已包含高手獎勵 {m_bonus} 元")
         else:
-            st.warning(f"目前總筆數 {total_v}，距離領取 2000 元高手獎金還差 {31 - total_v} 筆")
+            st.warning(f"目前總筆數 {total_v}，距離領取 2000 元高手獎金還差 {30 - total_v} 筆")
+
+# --- 寄送郵件區塊 ---
+if st.session_state.report_text != "":
+    st.divider()
+    st.header("寄送電子郵件報表")
+    target_email = st.text_input("輸入接收者的 Gmail 信箱")
+    
+    if st.button("發送郵件"):
+        if target_email:
+            with st.spinner("正在寄送..."):
+                success = send_email(target_email, st.session_state.report_text)
+                if success:
+                    st.success(f"已成功寄送至 {target_email}")
+        else:
+            st.error("請輸入完整的 Email 地址")
