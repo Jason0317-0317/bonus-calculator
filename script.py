@@ -5,7 +5,7 @@ import io
 # ========================
 # 計算函式
 # ========================
-def calculate_bonus(deal_counts, extra_classes, loyalty_counts, upgrade_counts):
+def calculate_bonus(deal_counts, extra_classes, loyalty_counts, upgrade_counts, is_full_time, brand_count):
     # 1. 體驗成交獎金
     d_total = (deal_counts.get("當天", 0) * 80 + 
                deal_counts.get("48小時", 0) * 60 + 
@@ -24,7 +24,18 @@ def calculate_bonus(deal_counts, extra_classes, loyalty_counts, upgrade_counts):
     upgrade_prices = {"1對2變1對3": 100, "團課變期班": 150, "包班成立": 300}
     u_total = sum(upgrade_prices.get(name, 0) * count for name, count in upgrade_counts.items())
 
-    # 5. 月轉換高手筆數累計
+    # 5. 品牌知名度提升獎金 (新增功能)
+    base_val = 5 if is_full_time else 2
+    if brand_count == 0:
+        b_total = -200
+    elif brand_count < base_val:
+        b_total = -100
+    else:
+        # 每增加 5 位加 200
+        extra_units = (brand_count - base_val) // 5
+        b_total = extra_units * 200
+
+    # 6. 月轉換高手筆數累計
     total_deals = (sum(deal_counts.values()) + 
                    sum(upgrade_counts.values()) + 
                    sum(loyalty_counts.values()) + 
@@ -36,39 +47,35 @@ def calculate_bonus(deal_counts, extra_classes, loyalty_counts, upgrade_counts):
     elif total_deals >= 30:
         monthly_bonus = 2000
     
-    final_total = d_total + c_total + l_total + u_total + monthly_bonus
+    final_total = d_total + c_total + l_total + u_total + monthly_bonus + b_total
 
-    return final_total, total_deals, monthly_bonus, l_total, d_total, u_total
+    return final_total, total_deals, monthly_bonus, l_total, d_total, u_total, b_total
 
 # ========================
 # 產生 Excel 檔案的函式
 # ========================
-def generate_excel(total_v, result, deal_dict, classes, loyalty_dict, upgrades, d_bonus, l_bonus, u_bonus, m_bonus):
-    # 整理資料成表格格式
+def generate_excel(total_v, result, deal_dict, classes, loyalty_dict, upgrades, d_bonus, l_bonus, u_bonus, m_bonus, b_bonus, emp_type, b_count):
     data = {
         "報表項目": [
             "【總結】",
             "總轉換筆數 (筆)", "本月預計總獎金 (元)",
             "【項目統計】",
-            "體驗成交 (筆)", "補開課程 (次)", "回流人數 (人)", "結構升級 (次)",
+            "體驗成交 (筆)", "補開課程 (次)", "回流人數 (人)", "結構升級 (次)", "品牌推廣人數 (位)",
             "【獎金明細】",
-            "體驗成交獎金 (元)", "補位獎金 (元)", "加發回流獎金 (元)", "結構升級獎金 (元)", "月轉換高手獎勵 (元)"
+            "員工身份", "體驗成交獎金 (元)", "補位獎金 (元)", "加發回流獎金 (元)", "結構升級獎金 (元)", "品牌知名度獎金 (元)", "月轉換高手獎勵 (元)"
         ],
         "數據": [
-            "", # 標題列留空
+            "", 
             total_v, result,
             "", 
-            sum(deal_dict.values()), classes, sum(loyalty_dict.values()), sum(upgrades.values()),
+            sum(deal_dict.values()), classes, sum(loyalty_dict.values()), sum(upgrades.values()), b_count,
             "", 
-            d_bonus, classes * 30, l_bonus, u_bonus, m_bonus
+            emp_type, d_bonus, classes * 30, l_bonus, u_bonus, b_bonus, m_bonus
         ]
     }
     
     df = pd.DataFrame(data)
-    
-    # 將 DataFrame 轉換為 Excel 的二進位資料供下載
     output = io.BytesIO()
-    # 使用 openpyxl 作為引擎寫入
     with pd.ExcelWriter(output, engine='openpyxl') as writer:
         df.to_excel(writer, index=False, sheet_name='當月獎金結算')
     
@@ -77,21 +84,17 @@ def generate_excel(total_v, result, deal_dict, classes, loyalty_dict, upgrades, 
 # ========================
 # Streamlit UI
 # ========================
-st.set_page_config(page_title="業務獎金計算系統", layout="centered")
+st.set_page_config(page_title="業務獎金計算系統 v2", layout="centered")
 st.title("業務獎金計算系統")
 
-# 初始化 Session State，確保點擊下載時畫面資料不會消失
+# 初始化 Session State
 if 'report_text' not in st.session_state:
     st.session_state.report_text = ""
 if 'excel_data' not in st.session_state:
     st.session_state.excel_data = None
-if 'total_v' not in st.session_state:
-    st.session_state.total_v = 0
-if 'm_bonus' not in st.session_state:
-    st.session_state.m_bonus = 0
 
 # --- 第一區：體驗成交 ---
-st.header("1. 體驗成交/筆")
+st.header("1. 體驗成交與品牌推廣")
 col1, col2, col3 = st.columns(3)
 with col1:
     d0 = st.number_input("當天成交(筆)", min_value=0, step=1)
@@ -101,6 +104,15 @@ with col3:
     d37 = st.number_input("7天內(筆)", min_value=0, step=1)
 
 deal_dict = {"當天": d0, "48小時": d12, "7天內": d37}
+
+st.subheader("品牌知名度提升")
+b_col1, b_col2 = st.columns(2)
+with b_col1:
+    emp_type = st.selectbox("員工身份", ["正職人員", "兼職人員"])
+with b_col2:
+    brand_count = st.number_input("知名度推廣人數 (位)", min_value=0, step=1)
+
+is_full_time = (emp_type == "正職人員")
 
 # --- 第二區：補位與回流 ---
 st.header("2. 補位與回流獎金")
@@ -133,40 +145,44 @@ if st.button("開始計算總獎金", type="primary"):
     st.balloons()
     
     # 執行計算
-    result, total_v, m_bonus, l_bonus, d_bonus, u_bonus = calculate_bonus(deal_dict, classes, loyalty_dict, upgrades)
+    (result, total_v, m_bonus, l_bonus, d_bonus, u_bonus, b_bonus) = calculate_bonus(
+        deal_dict, classes, loyalty_dict, upgrades, is_full_time, brand_count
+    )
     
-    # 存入 Session State 以保留狀態
+    # 儲存狀態
     st.session_state.total_v = total_v
     st.session_state.m_bonus = m_bonus
     
-    # 產生並儲存純文字報表
+    # 產生文字報表
     st.session_state.report_text = f"""業務獎金結算報表
 ----------------------
+身份：{emp_type}
 總轉換筆數：{total_v} 筆
 本月總獎金：NT$ {result}
 
 項目統計：
 - 體驗成交：{sum(deal_dict.values())} 筆
+- 品牌推廣：{brand_count} 位
 - 補開課程：{classes} 筆
 - 回流人數：{sum(loyalty_dict.values())} 人
 - 結構升級：{sum(upgrades.values())} 次
 
 獎金明細：
 - 體驗成交獎金：{d_bonus} 元
+- 品牌知名度獎金：{b_bonus} 元
 - 補位獎金：{classes * 30} 元
 - 加發回流獎金：{l_bonus} 元
 - 結構升級獎金：{u_bonus} 元
 - 月轉換高手獎勵：{m_bonus} 元
 """
 
-    # 產生並儲存 Excel 二進位資料
+    # 產生 Excel
     st.session_state.excel_data = generate_excel(
         total_v, result, deal_dict, classes, loyalty_dict, 
-        upgrades, d_bonus, l_bonus, u_bonus, m_bonus
+        upgrades, d_bonus, l_bonus, u_bonus, m_bonus, b_bonus, emp_type, brand_count
     )
 
-# --- 報表顯示與下載區塊 ---
-# 只要有計算過(excel_data有資料)，就會顯示報表與下載按鈕
+# --- 顯示與下載 ---
 if st.session_state.excel_data is not None:
     st.success("計算完成")
     
@@ -176,16 +192,12 @@ if st.session_state.excel_data is not None:
         if st.session_state.total_v >= 30:
             st.info(f"總筆數 {st.session_state.total_v} 已達標。包含高手獎勵 {st.session_state.m_bonus} 元")
         else:
-            st.warning(f"目前總筆數 {st.session_state.total_v}。距離領取 2000 元高手獎金還差 {30 - st.session_state.total_v} 筆")
+            st.warning(f"目前總筆數 {st.session_state.total_v}。距離高手獎金還差 {30 - st.session_state.total_v} 筆")
 
-    st.divider()
-    st.header("匯出報表")
-    
-    # Streamlit 內建的下載按鈕
     st.download_button(
         label="下載 Excel 結算檔案",
         data=st.session_state.excel_data,
-        file_name="業務當月獎金結算表.xlsx",
+        file_name=f"業務獎金結算_{emp_type}.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         type="primary"
     )
