@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import io
+import datetime
 from openpyxl.styles import Font, Alignment, PatternFill
 from openpyxl.utils import get_column_letter
 
@@ -31,7 +32,7 @@ def calculate_bonus(deal_counts, extra_classes, loyalty_counts, upgrade_counts, 
         b_note = "推廣人數為 0"
     elif brand_count < base_val:
         b_total = -100
-        b_note = f"未達基本門檻 ({base_val}位)"
+        b_note = f"未達門檻 ({base_val}位)"
     elif brand_count == base_val:
         b_total = 0
         b_note = "符合基本門檻"
@@ -49,19 +50,21 @@ def calculate_bonus(deal_counts, extra_classes, loyalty_counts, upgrade_counts, 
     return final_total, total_deals, monthly_bonus, l_total, d_total, u_total, b_total, b_note
 
 # ========================
-# 產生橫向格式化 Excel 的函式
+# 產生格式化 Excel 的函式
 # ========================
-def generate_side_by_side_excel(total_v, result, deal_dict, classes, loyalty_dict, upgrades, d_bonus, l_bonus, u_bonus, m_bonus, b_bonus, b_note, emp_type, b_count):
-    # 左側資料：統計與總結
+def generate_side_by_side_excel(meta_data, total_v, result, deal_dict, classes, loyalty_dict, upgrades, d_bonus, l_bonus, u_bonus, m_bonus, b_bonus, b_note, emp_type, b_count):
+    # 基本資訊列
+    header_info = pd.DataFrame([meta_data])
+    
+    # 左側資料：統計
     stats_data = {
-        "統計類別": ["總結", "總結", "統計", "統計", "統計", "統計", "統計"],
-        "項目名稱": ["總轉換筆數", "預計總獎金", "體驗成交", "補開課程", "回流人數", "結構升級", "品牌推廣人數"],
-        "數值": [total_v, result, sum(deal_dict.values()), classes, sum(loyalty_dict.values()), sum(upgrades.values()), b_count]
+        "統計項目": ["總轉換筆數", "預計總獎金", "體驗成交(筆)", "補開課程(次)", "回流人數(人)", "結構升級(次)", "品牌推廣(位)"],
+        "數據": [total_v, result, sum(deal_dict.values()), classes, sum(loyalty_dict.values()), sum(upgrades.values()), b_count]
     }
     
-    # 右側資料：明細與備註
+    # 右側資料：明細
     details_data = {
-        "明細項目": ["員工身份", "體驗成交獎金", "補位獎金", "回流獎金", "結構升級獎金", "品牌知名度獎金", "月高手獎勵", "獎金說明備註"],
+        "獎金明細項目": ["員工身份", "體驗成交獎金", "補位獎金", "回流獎金", "結構升級獎金", "品牌知名度獎金", "月高手獎勵", "獎金說明備註"],
         "金額/內容": [emp_type, d_bonus, classes * 30, l_bonus, u_bonus, b_bonus, m_bonus, b_note]
     }
     
@@ -70,106 +73,124 @@ def generate_side_by_side_excel(total_v, result, deal_dict, classes, loyalty_dic
     
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine='openpyxl') as writer:
-        # 寫入左側表格 (從 A1 開始)
-        df_stats.to_excel(writer, index=False, sheet_name='獎金結算', startcol=0)
-        # 寫入右側表格 (從 E1 開始，中間空一欄)
-        df_details.to_excel(writer, index=False, sheet_name='獎金結算', startcol=4)
+        # 1. 寫入基本資訊 (Row 1)
+        header_info.to_excel(writer, index=False, sheet_name='獎金結算', startrow=0, startcol=0)
+        
+        # 2. 寫入統計與明細 (Row 4 開始，留出一排空間)
+        df_stats.to_excel(writer, index=False, sheet_name='獎金結算', startrow=3, startcol=0)
+        df_details.to_excel(writer, index=False, sheet_name='獎金結算', startrow=3, startcol=3)
         
         workbook = writer.book
         worksheet = writer.sheets['獎金結算']
         
         # 樣式定義
-        header_fill = PatternFill(start_color="44546A", end_color="44546A", fill_type="solid") # 深藍色調
+        header_fill = PatternFill(start_color="44546A", end_color="44546A", fill_type="solid")
+        info_fill = PatternFill(start_color="D9E1F2", end_color="D9E1F2", fill_type="solid")
         header_font = Font(color="FFFFFF", bold=True)
         center_align = Alignment(horizontal="center", vertical="center")
         red_font = Font(color="FF0000", bold=True)
 
-        # 格式化所有標題列 (第一列的 A,B,C 欄位 與 E,F 欄位)
-        for col_idx in [1, 2, 3, 5, 6]:
-            cell = worksheet.cell(row=1, column=col_idx)
+        # 格式化基本資訊區 (Row 1)
+        for col in range(1, 4):
+            cell = worksheet.cell(row=1, column=col)
+            cell.fill = header_fill
+            cell.font = header_font
+            cell.alignment = center_align
+            val_cell = worksheet.cell(row=2, column=col)
+            val_cell.fill = info_fill
+            val_cell.alignment = center_align
+
+        # 格式化統計與明細標題 (Row 4)
+        for col in [1, 2, 4, 5]:
+            cell = worksheet.cell(row=4, column=col)
             cell.fill = header_fill
             cell.font = header_font
             cell.alignment = center_align
 
-        # 調整欄寬與內容置中
-        all_cols = [1, 2, 3, 4, 5, 6] # A,B,C (左) D (空) E,F (右)
-        for col_idx in all_cols:
-            worksheet.column_dimensions[get_column_letter(col_idx)].width = 18
-            for row in range(1, worksheet.max_row + 1):
+        # 調整欄寬與負數標紅
+        for col_idx in range(1, 6):
+            worksheet.column_dimensions[get_column_letter(col_idx)].width = 20
+            for row in range(4, worksheet.max_row + 1):
                 cell = worksheet.cell(row=row, column=col_idx)
                 cell.alignment = center_align
-                # 負數標紅 (檢查 C 欄與 F 欄的數值)
-                if col_idx in [3, 6]:
-                    if isinstance(cell.value, (int, float)) and cell.value < 0:
-                        cell.font = red_font
+                if col_idx in [2, 5] and isinstance(cell.value, (int, float)) and cell.value < 0:
+                    cell.font = red_font
 
     return output.getvalue()
 
 # ========================
-# Streamlit UI
+# Streamlit UI (直式排版)
 # ========================
-st.set_page_config(page_title="業務獎金計算系統 v4", layout="wide") # 使用寬版介面
-st.title("💰 業務獎金結算與導出系統")
+st.set_page_config(page_title="業務獎金計算系統 v5", layout="centered")
 
-# 初始化 Session State
-if 'excel_data' not in st.session_state:
-    st.session_state.excel_data = None
+st.title("💰 業務獎金結算系統")
 
-# UI 佈局
-main_col1, main_col2 = st.columns([1, 1])
+# --- 0. 基本資訊區 ---
+st.header("📋 基本資訊")
+branch = st.selectbox("所屬館別", ["義昌館", "高美館", "中山館", "巨蛋館"])
+editor_name = st.text_input("小編姓名", placeholder="請輸入姓名")
+report_date = st.date_input("報表日期", datetime.date.today())
 
-with main_col1:
-    st.header("1. 體驗與推廣")
-    d_c1, d_c2, d_c3 = st.columns(3)
-    with d_c1: d0 = st.number_input("當天成交", min_value=0, step=1)
-    with d_c2: d12 = st.number_input("48小時", min_value=0, step=1)
-    with d_c3: d37 = st.number_input("7天內", min_value=0, step=1)
-    
-    st.divider()
-    emp_type = st.radio("員工身份", ["正職人員", "兼職人員"], horizontal=True)
-    brand_count = st.number_input("知名度推廣人數 (位)", min_value=0, step=1)
+# --- 1. 體驗成交與品牌推廣 ---
+st.header("1. 體驗與品牌推廣")
+d0 = st.number_input("當天成交(筆)", min_value=0, step=1)
+d12 = st.number_input("48小時(筆)", min_value=0, step=1)
+d37 = st.number_input("7天內(筆)", min_value=0, step=1)
 
-with main_col2:
-    st.header("2. 課程與升級")
-    classes = st.number_input("補開課次數", min_value=0, step=1)
-    
-    st.subheader("回流購課 (人)")
-    la, lb, lc, ld = st.columns(4)
-    with la: l10 = st.number_input("10堂", min_value=0, step=1)
-    with lb: l20 = st.number_input("20堂", min_value=0, step=1)
-    with lc: l30 = st.number_input("30堂", min_value=0, step=1)
-    with ld: l40 = st.number_input("40堂", min_value=0, step=1)
-    
-    st.subheader("結構升級 (次)")
-    u_c1, u_c2, u_c3 = st.columns(3)
-    with u_c1: u1 = st.number_input("1對2變3", min_value=0, step=1)
-    with u_c2: u2 = st.number_input("團變期", min_value=0, step=1)
-    with u_c3: u3 = st.number_input("包班", min_value=0, step=1)
+emp_type = st.radio("員工身份", ["正職人員", "兼職人員"], horizontal=True)
+brand_count = st.number_input("知名度推廣人數 (位)", min_value=0, step=1)
 
-# 計算邏輯
+# --- 2. 課程與回流 ---
+st.header("2. 課程與回流獎金")
+classes = st.number_input("補開課次數", min_value=0, step=1)
+
+st.subheader("加發回流購課獎金 (人)")
+l_c1, l_c2, l_c3, l_c4 = st.columns(4)
+with l_c1: l10 = st.number_input("10堂", min_value=0, step=1)
+with l_c2: l20 = st.number_input("20堂", min_value=0, step=1)
+with l_c3: l30 = st.number_input("30堂", min_value=0, step=1)
+with l_c4: l40 = st.number_input("40堂", min_value=0, step=1)
+
+# --- 3. 結構升級 ---
+st.header("3. 結構升級獎")
+u1 = st.number_input("1對2 變 1對3以上 (次)", min_value=0, step=1)
+u2 = st.number_input("團課 變 期班 (次)", min_value=0, step=1)
+u3 = st.number_input("包班成立 (次)", min_value=0, step=1)
+
+# --- 計算按鈕 ---
+st.divider()
 if st.button("開始計算並生成報表", type="primary", use_container_width=True):
-    deal_dict = {"當天": d0, "48小時": d12, "7天內": d37}
-    loyalty_dict = {"10堂": l10, "20堂": l20, "30堂": l30, "40堂": l40}
-    upgrades = {"1對2變1對3": u1, "團課變期班": u2, "包班成立": u3}
-    
-    (result, total_v, m_bonus, l_bonus, d_bonus, u_bonus, b_bonus, b_note) = calculate_bonus(
-        deal_dict, classes, loyalty_dict, upgrades, (emp_type == "正職人員"), brand_count
-    )
-    
-    st.session_state.excel_data = generate_side_by_side_excel(
-        total_v, result, deal_dict, classes, loyalty_dict, 
-        upgrades, d_bonus, l_bonus, u_bonus, m_bonus, b_bonus, b_note, emp_type, brand_count
-    )
-    st.balloons()
-    st.success(f"計算完畢！本月總獎金預計為：NT$ {result}")
-
-# 下載區塊
-if st.session_state.excel_data:
-    st.divider()
-    st.download_button(
-        label="📥 下載對齊美化版 Excel 報表",
-        data=st.session_state.excel_data,
-        file_name=f"業務獎金結算_{emp_type}.xlsx",
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        use_container_width=True
-    )
+    if not editor_name:
+        st.error("請輸入小編姓名再進行計算")
+    else:
+        deal_dict = {"當天": d0, "48小時": d12, "7天內": d37}
+        loyalty_dict = {"10堂": l10, "20堂": l20, "30堂": l30, "40堂": l40}
+        upgrades = {"1對2變1對3": u1, "團課變期班": u2, "包班成立": u3}
+        
+        (result, total_v, m_bonus, l_bonus, d_bonus, u_bonus, b_bonus, b_note) = calculate_bonus(
+            deal_dict, classes, loyalty_dict, upgrades, (emp_type == "正職人員"), brand_count
+        )
+        
+        # 整理 Metadata
+        meta_data = {
+            "館別": branch,
+            "小編姓名": editor_name,
+            "報表日期": str(report_date)
+        }
+        
+        # 產生 Excel
+        excel_data = generate_side_by_side_excel(
+            meta_data, total_v, result, deal_dict, classes, loyalty_dict, 
+            upgrades, d_bonus, l_bonus, u_bonus, m_bonus, b_bonus, b_note, emp_type, brand_count
+        )
+        
+        st.balloons()
+        st.success(f"【{branch} - {editor_name}】計算完成！總獎金：NT$ {result}")
+        
+        st.download_button(
+            label=f"📥 下載 {report_date} 結算報表",
+            data=excel_data,
+            file_name=f"{branch}_{editor_name}_{report_date}_獎金結算.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            use_container_width=True
+        )
