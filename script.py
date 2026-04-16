@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import io
 import datetime
-from openpyxl.styles import Font, Alignment, PatternFill
+from openpyxl.styles import Font, Alignment
 from openpyxl.utils import get_column_letter
 
 # ========================
@@ -50,9 +50,9 @@ def calculate_bonus(deal_counts, extra_classes, loyalty_counts, upgrade_counts, 
     return final_total, total_deals, monthly_bonus, l_total, d_total, u_total, b_total, b_note
 
 # ========================
-# 產生格式化 Excel 的函式
+# 產生無顏色格式化 Excel 的函式
 # ========================
-def generate_side_by_side_excel(meta_data, total_v, result, deal_dict, classes, loyalty_dict, upgrades, d_bonus, l_bonus, u_bonus, m_bonus, b_bonus, b_note, emp_type, b_count):
+def generate_plain_excel(meta_data, total_v, result, deal_dict, classes, loyalty_dict, upgrades, d_bonus, l_bonus, u_bonus, m_bonus, b_bonus, b_note, emp_type, b_count):
     # 基本資訊列
     header_info = pd.DataFrame([meta_data])
     
@@ -76,36 +76,29 @@ def generate_side_by_side_excel(meta_data, total_v, result, deal_dict, classes, 
         # 1. 寫入基本資訊 (Row 1)
         header_info.to_excel(writer, index=False, sheet_name='獎金結算', startrow=0, startcol=0)
         
-        # 2. 寫入統計與明細 (Row 4 開始，留出一排空間)
+        # 2. 寫入統計與明細 (Row 4 開始)
         df_stats.to_excel(writer, index=False, sheet_name='獎金結算', startrow=3, startcol=0)
         df_details.to_excel(writer, index=False, sheet_name='獎金結算', startrow=3, startcol=3)
         
         workbook = writer.book
         worksheet = writer.sheets['獎金結算']
         
-        # 樣式定義
-        header_fill = PatternFill(start_color="44546A", end_color="44546A", fill_type="solid")
-        info_fill = PatternFill(start_color="D9E1F2", end_color="D9E1F2", fill_type="solid")
-        header_font = Font(color="FFFFFF", bold=True)
+        # 樣式定義 (僅保留字體與對齊)
+        bold_font = Font(bold=True)
         center_align = Alignment(horizontal="center", vertical="center")
         red_font = Font(color="FF0000", bold=True)
 
-        # 格式化基本資訊區 (Row 1)
+        # 格式化標題列 (無顏色，僅粗體)
+        # 第一排基本資訊標題
         for col in range(1, 4):
-            cell = worksheet.cell(row=1, column=col)
-            cell.fill = header_fill
-            cell.font = header_font
-            cell.alignment = center_align
-            val_cell = worksheet.cell(row=2, column=col)
-            val_cell.fill = info_fill
-            val_cell.alignment = center_align
+            worksheet.cell(row=1, column=col).font = bold_font
+            worksheet.cell(row=1, column=col).alignment = center_align
+            worksheet.cell(row=2, column=col).alignment = center_align
 
-        # 格式化統計與明細標題 (Row 4)
+        # 第四排報表統計標題
         for col in [1, 2, 4, 5]:
-            cell = worksheet.cell(row=4, column=col)
-            cell.fill = header_fill
-            cell.font = header_font
-            cell.alignment = center_align
+            worksheet.cell(row=4, column=col).font = bold_font
+            worksheet.cell(row=4, column=col).alignment = center_align
 
         # 調整欄寬與負數標紅
         for col_idx in range(1, 6):
@@ -113,6 +106,7 @@ def generate_side_by_side_excel(meta_data, total_v, result, deal_dict, classes, 
             for row in range(4, worksheet.max_row + 1):
                 cell = worksheet.cell(row=row, column=col_idx)
                 cell.alignment = center_align
+                # 負數數值標紅
                 if col_idx in [2, 5] and isinstance(cell.value, (int, float)) and cell.value < 0:
                     cell.font = red_font
 
@@ -121,12 +115,12 @@ def generate_side_by_side_excel(meta_data, total_v, result, deal_dict, classes, 
 # ========================
 # Streamlit UI (直式排版)
 # ========================
-st.set_page_config(page_title="業務獎金計算系統 v5", layout="centered")
+st.set_page_config(page_title="業務獎金計算系統", layout="centered")
 
-st.title("💰 業務獎金結算系統")
+st.title("業務獎金計算系統")
 
 # --- 0. 基本資訊區 ---
-st.header("📋 基本資訊")
+st.header("基本資訊")
 branch = st.selectbox("所屬館別", ["義昌館", "高美館", "中山館", "巨蛋館"])
 editor_name = st.text_input("小編姓名", placeholder="請輸入姓名")
 report_date = st.date_input("報表日期", datetime.date.today())
@@ -163,6 +157,9 @@ if st.button("開始計算並生成報表", type="primary", use_container_width=
     if not editor_name:
         st.error("請輸入小編姓名再進行計算")
     else:
+        # 觸發氣球特效
+        st.balloons()
+        
         deal_dict = {"當天": d0, "48小時": d12, "7天內": d37}
         loyalty_dict = {"10堂": l10, "20堂": l20, "30堂": l30, "40堂": l40}
         upgrades = {"1對2變1對3": u1, "團課變期班": u2, "包班成立": u3}
@@ -178,17 +175,16 @@ if st.button("開始計算並生成報表", type="primary", use_container_width=
             "報表日期": str(report_date)
         }
         
-        # 產生 Excel
-        excel_data = generate_side_by_side_excel(
+        # 產生無顏色 Excel
+        excel_data = generate_plain_excel(
             meta_data, total_v, result, deal_dict, classes, loyalty_dict, 
             upgrades, d_bonus, l_bonus, u_bonus, m_bonus, b_bonus, b_note, emp_type, brand_count
         )
         
-        st.balloons()
-        st.success(f"【{branch} - {editor_name}】計算完成！總獎金：NT$ {result}")
+        st.success(f"計算完成。總獎金：NT$ {result}")
         
         st.download_button(
-            label=f"📥 下載 {report_date} 結算報表",
+            label=f"下載 {report_date} 結算報表",
             data=excel_data,
             file_name=f"{branch}_{editor_name}_{report_date}_獎金結算.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
